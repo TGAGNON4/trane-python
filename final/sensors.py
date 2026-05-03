@@ -74,12 +74,14 @@ def read_mlx_temp_c(mlx) -> tuple[float, float]:
     return mlx.ambient_temperature, mlx.object_temperature
 
 
+_ATM_PA = 101_325.0  # standard atmosphere — sensor outputs gauge, CoolProp needs absolute
+
 def voltage_to_pa(volts: float) -> float:
     if volts != volts:
         return float("nan")
     psi = (volts - P_V_MIN) / (P_V_MAX - P_V_MIN) * P_MAX_PSI
     psi = max(0.0, min(P_MAX_PSI, psi))
-    return psi * 6894.757
+    return psi * 6894.757 + _ATM_PA
 
 
 def pressure_connected(volts: float) -> bool:

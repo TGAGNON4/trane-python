@@ -112,7 +112,7 @@ def state_points_payload(
 ) -> str:
     """Compact JSON of the four cycle state points. NaN values become null."""
     def _safe(T: float, P: float) -> dict:
-        if math.isnan(T) or math.isnan(P) or P <= 0:
+        if math.isnan(T) or math.isnan(P) or P < 101_325.0:
             return {"h": None, "s": None, "phase": "unknown"}
         props = state_point_props(T, P)
         return {
