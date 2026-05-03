@@ -23,7 +23,10 @@ from typing import Callable
 
 from config import (
     HMI_COMPONENT_SETPOINT,
+    HMI_COMPONENT_STATUS_TEXT,
     HMI_COMPONENT_UNIT,
+    HMI_PAGE_NORMAL,
+    HMI_PAGE_STATUS,
     HMI_SETPOINT_MAX_C,
     HMI_SETPOINT_MIN_C,
 )
@@ -116,6 +119,16 @@ class HMIController:
         unit_label = "°F" if unit == "F" else "°C"
         self._nextion_send(f"{HMI_COMPONENT_SETPOINT}.val={s}")
         self._nextion_send(f'{HMI_COMPONENT_UNIT}.txt="{unit_label}"')
+
+    def show_status(self, message: str) -> None:
+        """Switch to the status page and display message."""
+        self._nextion_send(f"page {HMI_PAGE_STATUS}")
+        self._nextion_send(f'{HMI_COMPONENT_STATUS_TEXT}.txt="{message}"')
+
+    def show_normal(self) -> None:
+        """Switch back to the normal operation page and re-sync setpoint/unit."""
+        self._nextion_send(f"page {HMI_PAGE_NORMAL}")
+        self.update_display()
 
     def request_display_setpoint(self, celsius: float) -> None:
         """Queue a setpoint to be pushed to the panel on the next `pump()`."""

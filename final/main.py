@@ -58,6 +58,7 @@ class Application:
 
         self.current_setpoint: dict[str, float] = {CIRCUIT: SPACE_SETPOINT}
         self.display_unit: str = "C"
+        self._hmi_display_state: str = ""  # tracks what is currently shown on the HMI
 
         self._temp_buffer: list[str] = []
         self._pressure_buffer: list[str] = []
@@ -116,6 +117,7 @@ class Application:
                 if hmi.start():
                     hmi.set_setpoint(self.current_setpoint[CIRCUIT])
                     self.hmi = hmi
+                    self._update_hmi_display_state()
                     print(f"HMI connected on {HMI_PORT}")
                 else:
                     print(f"HMI failed to open {HMI_PORT}")
@@ -200,6 +202,32 @@ class Application:
     def _on_hmi_unit(self, unit: str) -> None:
         self.set_unit(unit, push_to_hmi=False)
 
+    def _update_hmi_display_state(self) -> None:
+        """Switch the HMI page to match the current compressor state."""
+        if self.hmi is None:
+            return
+        status = self.compressor.status()
+        if status == "Off":
+            desired = "setup"
+        elif status == "Starting":
+            desired = "ramp_up"
+        elif status == "Shutting Down" and self.compressor.is_shutdown_ramping():
+            desired = "ramp_down"
+        else:
+            desired = "normal"
+
+        if desired == self._hmi_display_state:
+            return
+        self._hmi_display_state = desired
+        if desired == "setup":
+            self.hmi.show_status("Setting up ...")
+        elif desired == "ramp_up":
+            self.hmi.show_status("Ramping RPM up ...")
+        elif desired == "ramp_down":
+            self.hmi.show_status("Ramping RPM down ...")
+        else:
+            self.hmi.show_normal()
+
     # ----- main loop -----
 
     def _sample_loop(self) -> None:
@@ -273,6 +301,7 @@ class Application:
             on_startup=self._on_hmi_startup,
             on_unit=self._on_hmi_unit,
         )
+        self._update_hmi_display_state()
 
     def _buffer_sample(self, temp_line: str, pressure_line: str, line_date: str) -> None:
         if line_date != self._buffer_date and (self._temp_buffer or self._pressure_buffer):
