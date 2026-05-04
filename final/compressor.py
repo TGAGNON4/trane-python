@@ -39,6 +39,7 @@ from config import (
     VFD_MIN_RPM,
     VFD_RPM_AT_MAX_SPEED,
     VFD_RPM_AT_MIN_SPEED,
+    VFD_SHUTDOWN_RPM,
 )
 
 try:
@@ -141,7 +142,7 @@ class Compressor:
     def shutdown_to_min(self) -> None:
         """Ramp down to VFD_RPM_AT_MIN_SPEED and hold (graceful shutdown)."""
         self._shutdown_mode = True
-        self.set_override_rpm(VFD_RPM_AT_MIN_SPEED)
+        self.set_override_rpm(VFD_SHUTDOWN_RPM)
 
     def restart_sequence(self) -> None:
         """Cancel shutdown/override and re-run the startup sequence."""
@@ -206,7 +207,7 @@ class Compressor:
 
     def is_shutdown_ramping(self) -> bool:
         """True while in shutdown mode and RPM has not yet reached the minimum."""
-        return self._shutdown_mode and abs(self._current_rpm - VFD_RPM_AT_MIN_SPEED) > 50.0
+        return self._shutdown_mode and abs(self._current_rpm - VFD_SHUTDOWN_RPM) > 50.0
 
     def override_status_line(self) -> str | None:
         if self._override_rpm is None:
