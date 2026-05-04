@@ -150,7 +150,7 @@ class Application:
         self.current_setpoint[CIRCUIT] = clamped
         if self.pid is not None:
             self.pid.setpoint = clamped
-        if self.compressor.get_override_rpm() is not None:
+        if self.compressor.get_override_rpm() is not None and not self.compressor.is_shutdown_mode():
             self.compressor.set_override_rpm(None)
             self.client.publish(f"{CIRCUIT}/Compressor_RPM", "", qos=0, retain=True)
             print("RPM override cleared by setpoint change")

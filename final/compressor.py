@@ -201,6 +201,9 @@ class Compressor:
         remaining = max(0.0, ramp + hold - elapsed)
         return f"hold {remaining:.0f}s left | {self._current_rpm:.0f}/{target:.0f} RPM | {freq} Hz"
 
+    def is_shutdown_mode(self) -> bool:
+        return self._shutdown_mode
+
     def is_shutdown_ramping(self) -> bool:
         """True while in shutdown mode and RPM has not yet reached the minimum."""
         return self._shutdown_mode and abs(self._current_rpm - VFD_MIN_RPM) > 50.0
