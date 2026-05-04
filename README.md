@@ -44,11 +44,88 @@ Each subdirectory that requires packages has its own README listing what to inst
 pip install <packages listed in that README>
 ```
 
-## Running
+## Running manually
 
 On each Pi, run from the appropriate circuit directory:
 
 ```bash
 cd circuit1   # or circuit2
 python main.py
+```
+
+## Running as a systemd service (auto-start on boot)
+
+These steps set up Circuit 1 to start automatically. For Circuit 2, replace every occurrence of `circuit1` with `circuit2`.
+
+### Step 1: Create the wrapper script
+
+```bash
+nano /home/team6/start_circuit1.sh
+```
+
+Paste this:
+
+```bash
+#!/bin/bash
+
+cd /home/team6/trane-python
+git pull origin main
+
+source /home/team6/adsenv/bin/activate
+python3 /home/team6/trane-python/circuit1/main.py
+```
+
+Save and exit: `Ctrl+X` → `Y` → `Enter`
+
+### Step 2: Make it executable
+
+```bash
+chmod +x /home/team6/start_circuit1.sh
+```
+
+### Step 3: Create the service file
+
+```bash
+sudo nano /etc/systemd/system/circuit1.service
+```
+
+Paste this:
+
+```ini
+[Unit]
+Description=Circuit 1 Main Script
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/home/team6/start_circuit1.sh
+WorkingDirectory=/home/team6/trane-python/circuit1
+StandardOutput=journal
+StandardError=journal
+Restart=always
+User=team6
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Save and exit: `Ctrl+X` → `Y` → `Enter`
+
+### Step 4: Create the data folder
+
+```bash
+mkdir -p /home/team6/data
+```
+
+### Step 5: Enable and start the service
+
+```bash
+sudo systemctl enable circuit1.service
+sudo systemctl start circuit1.service
+```
+
+### Step 6: Verify it's running
+
+```bash
+sudo systemctl status circuit1.service
 ```
