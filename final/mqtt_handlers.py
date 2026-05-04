@@ -99,7 +99,7 @@ def _on_message(app, client, msg) -> None:
         app.request_start("MQTT")
     elif topic == data_topic(CIRCUIT, "Unit_Change"):
         unit = payload.upper()
-        if unit in ("C", "F"):
+        if unit in ("C", "F") and unit != app.display_unit:
             app.set_unit(unit, push_to_hmi=True)
     elif topic == f"{CIRCUIT}/Compressor_RPM" or topic == data_topic(CIRCUIT, "Compressor_RPM"):
         _handle_compressor_rpm(app, payload)

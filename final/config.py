@@ -61,7 +61,7 @@ PWM_ENABLED = True  # Enable PWM control
 PWM_PIN = 12  # GPIO12 / PWM0
 PWM_FREQUENCY_HZ = 1000  # PWM carrier frequency in Hz
 PWM_DUTY_CYCLE = 50  # Duty cycle % sent to VFD signal input
-VFD_MIN_RPM = 2100.0        # PWM floor: keeps PID and UI above the range where Pi PWM inaccuracy could stall the VFD
+VFD_MIN_RPM = 2200.0        # PWM floor: keeps PID and UI above the range where Pi PWM inaccuracy could stall the VFD
 VFD_MAX_RPM = 4500.0        # Software maximum operating RPM
 VFD_FREQ_OFF = 300          # PWM frequency (Hz) sent to VFD when compressor is off
 # VFD hardware speed scale: 1000–10000 Hz maps linearly to 2000–6000 RPM

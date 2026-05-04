@@ -186,6 +186,7 @@ class Application:
         if push_to_hmi and self.hmi is not None:
             self.hmi.set_unit(unit)
         self.client.publish(f"{CIRCUIT}/Unit", unit, qos=0, retain=True)
+        self.client.publish(data_topic(CIRCUIT, "Unit_Change"), unit, qos=0, retain=False)
 
     # ----- HMI event handlers (registered with hmi.pump()) -----
 
