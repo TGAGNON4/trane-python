@@ -207,9 +207,7 @@ class Application:
         if self.hmi is None:
             return
         status = self.compressor.status()
-        if status == "Off":
-            desired = "setup"
-        elif status == "Starting":
+        if status == "Starting":
             desired = "ramp_up"
         elif status == "Shutting Down" and self.compressor.is_shutdown_ramping():
             desired = "ramp_down"
@@ -219,9 +217,7 @@ class Application:
         if desired == self._hmi_display_state:
             return
         self._hmi_display_state = desired
-        if desired == "setup":
-            self.hmi.show_status("Setting up ...")
-        elif desired == "ramp_up":
+        if desired == "ramp_up":
             self.hmi.show_status("Ramping RPM up ...")
         elif desired == "ramp_down":
             self.hmi.show_status("Ramping RPM down ...")
@@ -336,6 +332,8 @@ class Application:
     def _cleanup(self) -> None:
         if self._temp_buffer or self._pressure_buffer:
             flush_buffers(BASE_DIR, self._buffer_date, self._temp_buffer, self._pressure_buffer)
+        if self.hmi is not None:
+            self.hmi.show_status("Setting up ...")
         if PWM_ENABLED:
             self.compressor.cleanup()
         if self.client is not None:
