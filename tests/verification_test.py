@@ -36,6 +36,11 @@ PASSWORD = "trAneEseNdeS_4321"
 CIRCUIT  = "Circuit1"
 LATENCY_LIMIT_S = 2.0   # all timing requirements are < 2 s
 
+# RPM bounds — must match circuit1/config.py so we know which direction has headroom
+VFD_MIN_RPM = 2200.0
+VFD_MAX_RPM = 3800.0
+RPM_MARGIN  = 300.0   # if baseline is within this of a limit, bias setpoint away from it
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -298,12 +303,24 @@ def test_control_response(quiet: bool = False) -> dict:
             quiet,
         )
 
-    # Publish a random setpoint change then restore
+    # Pick a setpoint that moves in the direction the RPM has room to go.
+    # This is a cooling system: lower setpoint → more cooling → RPM up.
+    #                           higher setpoint → less cooling  → RPM down.
     original_sp = 22.2
-    new_sp = random.uniform(18.9, 32.0)
-    while abs(new_sp - original_sp) < 2.0:
+    near_floor   = baseline <= VFD_MIN_RPM + RPM_MARGIN
+    near_ceiling = baseline >= VFD_MAX_RPM - RPM_MARGIN
+    if near_floor and not near_ceiling:
+        # Need RPM to go up → demand more cooling → lower setpoint
+        new_sp = round(random.uniform(18.9, original_sp - 2.0), 1)
+    elif near_ceiling and not near_floor:
+        # Need RPM to go down → demand less cooling → raise setpoint
+        new_sp = round(random.uniform(original_sp + 2.0, 32.0), 1)
+    else:
+        # Middle of range — either direction is fine
         new_sp = random.uniform(18.9, 32.0)
-    new_sp = round(new_sp, 1)
+        while abs(new_sp - original_sp) < 2.0:
+            new_sp = random.uniform(18.9, 32.0)
+        new_sp = round(new_sp, 1)
     t_publish = time.time()
     client.publish(
         f"Data/{CIRCUIT}/Setpoint_Record",
@@ -337,7 +354,7 @@ def test_control_response(quiet: bool = False) -> dict:
     client.disconnect()
 
     if response_time is None:
-        return _result(name, False, "No RPM change observed within 3 s of setpoint update", quiet)
+        return _result(name, False, "No RPM change observed within 5 s of setpoint update", quiet)
 
     passed = response_time < LATENCY_LIMIT_S
     return _result(
@@ -458,13 +475,23 @@ def main() -> None:
         test_dhcp_ethernet(),
     ]
 
+    SETTLE_S = 4.0  # wait between runs for RPM/sensors to settle
+
     print(f"\n--- Control response ({REPEAT} runs) ---")
-    control_runs = [test_control_response(quiet=True) for _ in range(REPEAT)]
+    control_runs = []
+    for i in range(REPEAT):
+        control_runs.append(test_control_response(quiet=True))
+        if i < REPEAT - 1:
+            time.sleep(SETTLE_S)
     print(_worst(control_runs)["msg"].replace("] ", f" (worst of {REPEAT})] ", 1))
     results.extend(control_runs)
 
     print(f"\n--- Sensor display latency ({REPEAT} runs) ---")
-    sensor_runs = [test_sensor_display_latency(quiet=True) for _ in range(REPEAT)]
+    sensor_runs = []
+    for i in range(REPEAT):
+        sensor_runs.append(test_sensor_display_latency(quiet=True))
+        if i < REPEAT - 1:
+            time.sleep(SETTLE_S)
     print(_worst(sensor_runs)["msg"].replace("] ", f" (worst of {REPEAT})] ", 1))
     results.extend(sensor_runs)
 
