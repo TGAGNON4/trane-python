@@ -20,6 +20,7 @@ import json
 import random
 import socket
 import subprocess
+import textwrap
 import threading
 import time
 import uuid
@@ -46,6 +47,12 @@ RPM_MARGIN  = 300.0   # if baseline is within this of a limit, bias setpoint awa
 # ---------------------------------------------------------------------------
 PASS = "PASS"
 FAIL = "FAIL"
+SEP_WIDTH = 60
+
+def _print(msg: str) -> None:
+    """Print msg wrapped to SEP_WIDTH, with a two-space hang-indent on continuation lines."""
+    for line in textwrap.wrap(msg, width=SEP_WIDTH, subsequent_indent="  ") or [""]:
+        print(line)
 
 def _result(name: str, passed: bool, detail: str = "", quiet: bool = False) -> dict:
     status = PASS if passed else FAIL
@@ -53,7 +60,7 @@ def _result(name: str, passed: bool, detail: str = "", quiet: bool = False) -> d
     if detail:
         msg += f" — {detail}"
     if not quiet:
-        print(msg)
+        _print(msg)
     return {"name": name, "passed": passed, "detail": detail, "msg": msg}
 
 
@@ -79,7 +86,7 @@ def _connect_blocking(client: mqtt.Client, timeout: float = 5.0) -> bool:
     try:
         client.connect(BROKER, PORT, keepalive=30)
     except Exception as exc:
-        print(f"  Connection error: {exc}")
+        _print(f"  Connection error: {exc}")
         return False
     client.loop_start()
     ok = connected.wait(timeout=timeout)
@@ -225,8 +232,8 @@ def test_dhcp_ethernet() -> dict:
     if eth_iface is None:
         return _result(name, False, "No Ethernet interface with an IP found")
 
-    print(f"  Ethernet: {eth_iface}={eth_ip}")
-    print("  Disabling WiFi …")
+    _print(f"  Ethernet: {eth_iface}={eth_ip}")
+    _print("  Disabling WiFi …")
     _wifi_set(False)
     time.sleep(2)   # let routing table settle
 
@@ -241,7 +248,7 @@ def test_dhcp_ethernet() -> dict:
     except Exception:
         pass
 
-    print("  Re-enabling WiFi …")
+    _print("  Re-enabling WiFi …")
     _wifi_set(True)
 
     if not connected:
@@ -456,12 +463,12 @@ def test_sensor_display_latency(quiet: bool = False) -> dict:
 # Runner
 # ---------------------------------------------------------------------------
 def main() -> None:
-    print("=" * 60)
+    print("=" * SEP_WIDTH)
     print("Verification Test Suite")
-    print(f"Broker : {BROKER}:{PORT}")
-    print(f"Circuit: {CIRCUIT}")
-    print(f"Limit  : {LATENCY_LIMIT_S * 1000:.0f} ms")
-    print("=" * 60)
+    _print(f"Broker : {BROKER}:{PORT}")
+    _print(f"Circuit: {CIRCUIT}")
+    _print(f"Limit  : {LATENCY_LIMIT_S * 1000:.0f} ms")
+    print("=" * SEP_WIDTH)
 
     REPEAT = 20
 
@@ -477,28 +484,28 @@ def main() -> None:
 
     SETTLE_S = 4.0  # wait between runs for RPM/sensors to settle
 
-    print(f"\n--- Control response ({REPEAT} runs) ---")
+    _print(f"\n--- Control response ({REPEAT} runs) ---")
     control_runs = []
     for i in range(REPEAT):
         control_runs.append(test_control_response(quiet=True))
         if i < REPEAT - 1:
             time.sleep(SETTLE_S)
-    print(_worst(control_runs)["msg"].replace("] ", f" (worst of {REPEAT})] ", 1))
+    _print(_worst(control_runs)["msg"].replace("] ", f" (worst of {REPEAT})] ", 1))
     results.extend(control_runs)
 
-    print(f"\n--- Sensor display latency ({REPEAT} runs) ---")
+    _print(f"\n--- Sensor display latency ({REPEAT} runs) ---")
     sensor_runs = []
     for i in range(REPEAT):
         sensor_runs.append(test_sensor_display_latency(quiet=True))
         if i < REPEAT - 1:
             time.sleep(SETTLE_S)
-    print(_worst(sensor_runs)["msg"].replace("] ", f" (worst of {REPEAT})] ", 1))
+    _print(_worst(sensor_runs)["msg"].replace("] ", f" (worst of {REPEAT})] ", 1))
     results.extend(sensor_runs)
 
-    print("=" * 60)
+    print("=" * SEP_WIDTH)
     passed = sum(1 for r in results if r["passed"])
-    print(f"Result : {passed}/{len(results)} passed")
-    print("=" * 60)
+    _print(f"Result : {passed}/{len(results)} passed")
+    print("=" * SEP_WIDTH)
 
 
 if __name__ == "__main__":
