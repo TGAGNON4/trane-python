@@ -312,8 +312,8 @@ def test_control_response(quiet: bool = False) -> dict:
         retain=False,
     )
 
-    # Wait up to 3 s for an RPM update
-    deadline = time.time() + 3.0
+    # Wait up to 5 s for an RPM update (PI sample time is 2 s, so worst case is ~2 s before the controller reacts)
+    deadline = time.time() + 5.0
     response_time: float | None = None
     while time.time() < deadline:
         with lock:
