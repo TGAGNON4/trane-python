@@ -53,7 +53,7 @@ PID_ENABLED = True  # Enable PID control
 PID_KP = 0.3
 PID_KI = 0.02
 PID_KD = 0.0
-PID_SAMPLE_TIME = 2.0
+PID_SAMPLE_TIME = 1.5
 PID_OUTPUT_LIMITS = (0.0, 1.0)  # Normalized output (0-1)
 
 # PWM control (compressor) settings
