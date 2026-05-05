@@ -17,6 +17,7 @@ Requirements: paho-mqtt, requests (pip install paho-mqtt requests)
 from __future__ import annotations
 
 import json
+import random
 import socket
 import subprocess
 import threading
@@ -297,9 +298,12 @@ def test_control_response(quiet: bool = False) -> dict:
             quiet,
         )
 
-    # Publish a setpoint change (nudge by +2 °C then restore)
+    # Publish a random setpoint change then restore
     original_sp = 22.2
-    new_sp = original_sp + 2.0
+    new_sp = random.uniform(18.9, 32.0)
+    while abs(new_sp - original_sp) < 2.0:
+        new_sp = random.uniform(18.9, 32.0)
+    new_sp = round(new_sp, 1)
     t_publish = time.time()
     client.publish(
         f"Data/{CIRCUIT}/Setpoint_Record",
