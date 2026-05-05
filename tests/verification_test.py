@@ -151,53 +151,98 @@ def test_mqtt_latency(samples: int = 5) -> dict:
 # ---------------------------------------------------------------------------
 # Test 2 — Ethernet port with DHCP
 # ---------------------------------------------------------------------------
+def _wifi_set(enabled: bool) -> None:
+    """Bring WiFi up or down via rfkill (preferred) or ip link."""
+    action = "unblock" if enabled else "block"
+    try:
+        subprocess.run(["rfkill", action, "wifi"],
+                       check=True, stderr=subprocess.DEVNULL)
+        return
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        pass
+    # fallback: find wlan* interface and toggle with ip link
+    try:
+        out = subprocess.check_output(["ip", "link", "show"],
+                                      stderr=subprocess.DEVNULL, text=True)
+        for line in out.splitlines():
+            parts = line.split(":")
+            if len(parts) >= 2:
+                iface = parts[1].strip().split("@")[0]
+                if iface.startswith("wlan"):
+                    link_action = "up" if enabled else "down"
+                    subprocess.run(["ip", "link", "set", iface, link_action],
+                                   stderr=subprocess.DEVNULL)
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        pass
+
+
 def test_dhcp_ethernet() -> dict:
     """
     Requirement: controller has an Ethernet port that supports DHCP.
 
-    Method: enumerate network interfaces via 'ip addr' and confirm that
-    an Ethernet interface (eth0 / enp* / ens*) has an IPv4 address
-    assigned (indicating successful DHCP negotiation).
-    """
-    name = "Ethernet port supports DHCP"
+    Method: disable WiFi, confirm an Ethernet interface has a DHCP-assigned
+    IP, then verify internet connectivity over that interface by connecting
+    to the MQTT broker.  WiFi is re-enabled regardless of outcome.
 
-    # Approach 1: check via 'ip addr' (Linux)
+    NOTE: requires root (or passwordless sudo) for rfkill / ip link.
+    Run as: sudo python3 tests/verification_test.py
+    """
+    name = "Ethernet port supports DHCP + internet connectivity"
+
+    # --- find ethernet interface and IP ---
+    eth_iface: str | None = None
+    eth_ip:    str | None = None
     try:
         output = subprocess.check_output(
             ["ip", "-4", "addr", "show"],
             stderr=subprocess.DEVNULL,
             text=True,
         )
-        eth_interfaces = []
         current_iface = None
         for line in output.splitlines():
             line = line.strip()
-            if line and not line.startswith(" ") and not line.startswith("inet"):
-                current_iface = line.split(":")[1].strip() if ":" in line else None
+            if line and not line.startswith("inet"):
+                parts = line.split(":")
+                if len(parts) >= 2:
+                    current_iface = parts[1].strip().split("@")[0]
             if current_iface and any(
                 current_iface.startswith(p) for p in ("eth", "enp", "ens", "eno")
             ):
                 if line.startswith("inet "):
-                    ip = line.split()[1].split("/")[0]
-                    eth_interfaces.append((current_iface, ip))
-
-        if eth_interfaces:
-            detail = ", ".join(f"{iface}={ip}" for iface, ip in eth_interfaces)
-            return _result(name, True, detail)
+                    eth_ip    = line.split()[1].split("/")[0]
+                    eth_iface = current_iface
+                    break
     except FileNotFoundError:
-        pass   # 'ip' not available — try fallback
+        return _result(name, False, "'ip' command not found — run on Linux")
 
-    # Approach 2: resolve own hostname — works on any OS
+    if eth_iface is None:
+        return _result(name, False, "No Ethernet interface with an IP found")
+
+    print(f"  Ethernet: {eth_iface}={eth_ip}")
+    print("  Disabling WiFi …")
+    _wifi_set(False)
+    time.sleep(2)   # let routing table settle
+
+    # --- test internet connectivity over ethernet only ---
+    connected = False
     try:
-        hostname = socket.gethostname()
-        ip = socket.gethostbyname(hostname)
-        loopback = ip.startswith("127.")
-        if not loopback:
-            return _result(name, True, f"hostname={hostname}, ip={ip}")
-        # loopback only — no external interface found
-        return _result(name, False, f"Only loopback address found ({ip})")
-    except Exception as exc:
-        return _result(name, False, str(exc))
+        client = _make_client()
+        connected = _connect_blocking(client, timeout=5.0)
+        if connected:
+            client.loop_stop()
+            client.disconnect()
+    except Exception:
+        pass
+
+    print("  Re-enabling WiFi …")
+    _wifi_set(True)
+
+    if not connected:
+        return _result(
+            name, False,
+            f"{eth_iface}={eth_ip} but could not reach broker over Ethernet"
+        )
+    return _result(name, True, f"{eth_iface}={eth_ip}, broker reachable over Ethernet")
 
 
 # ---------------------------------------------------------------------------
