@@ -13,6 +13,10 @@ globals().update({k: v for k, v in vars(_base).items() if not k.startswith("_")}
 # --- Circuit2 overrides ---
 CIRCUIT = "Circuit2"
 
+# Circuit2 uses a TEV (thermostatic expansion valve), which self-regulates
+# superheat across the full compressor speed range. No RPM ceiling needed —
+# the base VFD_MAX_RPM of 4500 RPM applies.
+
 # TODO: replace with the addresses programmed into Circuit2's MLX90614s.
 SENSORS = {
     "HighSide": 0x1A,
