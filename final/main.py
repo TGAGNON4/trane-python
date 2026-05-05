@@ -256,7 +256,12 @@ class Application:
                     int(time.time() * 1000),
                     pressure,
                 )
-                self.client.publish(f"{CIRCUIT}/Status", self.compressor.status(), qos=0, retain=True)
+                if self.compressor.poll_shutdown_complete():
+                    self.client.publish(f"{CIRCUIT}/Status", "Off", qos=0, retain=True)
+                    self.client.publish(f"{CIRCUIT}/Compressor_Current_RPM", "0", qos=0, retain=True)
+                    print("Shutdown complete — status reset to Off")
+                else:
+                    self.client.publish(f"{CIRCUIT}/Status", self.compressor.status(), qos=0, retain=True)
                 if PID_ENABLED and self.pid is not None and not self.compressor.apply_override_rpm():
                     if math.isnan(row.evaporator_ambient):
                         control_output = 0.0

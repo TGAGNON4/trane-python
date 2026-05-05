@@ -84,6 +84,7 @@ class Compressor:
         self._last_print_ts: float | None = None
         self._shutdown_mode: bool = False
         self._idle: bool = True
+        self._shutdown_just_completed: bool = False
 
     # ----- lifecycle -----
 
@@ -209,6 +210,13 @@ class Compressor:
         """True while in shutdown mode and RPM has not yet reached the minimum."""
         return self._shutdown_mode and abs(self._current_rpm - VFD_SHUTDOWN_RPM) > 50.0
 
+    def poll_shutdown_complete(self) -> bool:
+        """Returns True once on the tick the shutdown ramp finishes, then resets."""
+        if self._shutdown_just_completed:
+            self._shutdown_just_completed = False
+            return True
+        return False
+
     def override_status_line(self) -> str | None:
         if self._override_rpm is None:
             return None
@@ -263,12 +271,21 @@ class Compressor:
         """Step toward the override RPM and apply it. Returns False when not active.
 
         Startup is never interrupted; the override only takes effect afterwards.
+        When in shutdown mode and the target RPM is reached, transitions to idle.
         """
         if self._override_rpm is None or self._pwm is None or self._idle or not self.is_startup_complete():
             return False
         try:
             self._step_rpm(float(self._override_rpm))
             self._apply_freq(self._rpm_to_freq(self._current_rpm))
+            if self._shutdown_mode and abs(self._current_rpm - self._override_rpm) < 50.0:
+                self._idle = True
+                self._shutdown_mode = False
+                self._override_rpm = None
+                self._current_rpm = 0.0
+                self._shutdown_just_completed = True
+                self._apply_freq(VFD_FREQ_OFF)
+                print("Compressor shutdown complete — motor stopped")
             return True
         except Exception as exc:
             print(f"PWM override control error: {exc}")
