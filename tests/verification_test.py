@@ -295,7 +295,27 @@ def test_control_response(quiet: bool = False) -> dict:
         return _result(name, False, "Could not connect to broker", quiet)
 
     client.subscribe(f"{CIRCUIT}/Compressor_Current_RPM", qos=0)
-    time.sleep(0.5)
+    time.sleep(0.3)   # let retained message arrive
+
+    # Wait for RPM to stabilize before taking baseline (previous run's
+    # setpoint restore may still be ramping the compressor).
+    # We require 2 consecutive readings within 15 RPM of each other.
+    prev_rpm: float | None = None
+    stable_since: float | None = None
+    stabilize_deadline = time.time() + 10.0
+    while time.time() < stabilize_deadline:
+        with lock:
+            current = rpm_events[-1][1] if rpm_events else None
+        if current is not None:
+            if prev_rpm is not None and abs(current - prev_rpm) < 15:
+                if stable_since is None:
+                    stable_since = time.time()
+                elif time.time() - stable_since >= 2.0:
+                    break
+            else:
+                stable_since = None
+            prev_rpm = current
+        time.sleep(0.5)
 
     # Record baseline RPM
     with lock:
@@ -482,7 +502,7 @@ def main() -> None:
         test_dhcp_ethernet(),
     ]
 
-    SETTLE_S = 4.0  # wait between runs for RPM/sensors to settle
+    SETTLE_S = 6.0  # wait between runs for RPM/sensors to settle
 
     _print(f"\n--- Control response ({REPEAT} runs) ---")
     control_runs = []
