@@ -41,13 +41,14 @@ LATENCY_LIMIT_S = 2.0   # all timing requirements are < 2 s
 PASS = "PASS"
 FAIL = "FAIL"
 
-def _result(name: str, passed: bool, detail: str = "") -> dict:
+def _result(name: str, passed: bool, detail: str = "", quiet: bool = False) -> dict:
     status = PASS if passed else FAIL
     msg = f"[{status}] {name}"
     if detail:
         msg += f" — {detail}"
-    print(msg)
-    return {"name": name, "passed": passed, "detail": detail}
+    if not quiet:
+        print(msg)
+    return {"name": name, "passed": passed, "detail": detail, "msg": msg}
 
 
 def _make_client(client_id: str | None = None) -> mqtt.Client:
@@ -84,7 +85,7 @@ def _connect_blocking(client: mqtt.Client, timeout: float = 5.0) -> bool:
 # ---------------------------------------------------------------------------
 # Test 1 — MQTT round-trip latency < 2 s
 # ---------------------------------------------------------------------------
-def test_mqtt_latency(samples: int = 5) -> dict:
+def test_mqtt_latency(samples: int = 25) -> dict:
     """
     Requirement: MQTT messages confirmed received by cloud platform
     within 2 seconds of a sensor event on a local network connection.
@@ -122,7 +123,7 @@ def test_mqtt_latency(samples: int = 5) -> dict:
         client.publish(topic, payload, qos=0)
         time.sleep(0.5)
 
-    deadline = time.time() + 3.0
+    deadline = time.time() + 5.0
     while time.time() < deadline:
         with lock:
             if len(latencies) >= samples:
@@ -248,7 +249,7 @@ def test_dhcp_ethernet() -> dict:
 # ---------------------------------------------------------------------------
 # Test 3 — Control response: setpoint → RPM change < 2 s
 # ---------------------------------------------------------------------------
-def test_control_response() -> dict:
+def test_control_response(quiet: bool = False) -> dict:
     """
     Requirement: control software reflects a change in the lowest level
     of control within 2 seconds.
@@ -278,7 +279,7 @@ def test_control_response() -> dict:
 
     client.on_message = on_message
     if not _connect_blocking(client):
-        return _result(name, False, "Could not connect to broker")
+        return _result(name, False, "Could not connect to broker", quiet)
 
     client.subscribe(f"{CIRCUIT}/Compressor_Current_RPM", qos=0)
     time.sleep(0.5)
@@ -292,7 +293,8 @@ def test_control_response() -> dict:
         client.disconnect()
         return _result(
             name, True,
-            "SKIPPED — compressor not running; start compressor before this test"
+            "SKIPPED — compressor not running; start compressor before this test",
+            quiet,
         )
 
     # Publish a setpoint change (nudge by +2 °C then restore)
@@ -331,20 +333,21 @@ def test_control_response() -> dict:
     client.disconnect()
 
     if response_time is None:
-        return _result(name, False, "No RPM change observed within 3 s of setpoint update")
+        return _result(name, False, "No RPM change observed within 3 s of setpoint update", quiet)
 
     passed = response_time < LATENCY_LIMIT_S
     return _result(
         name, passed,
         f"RPM updated {response_time*1000:.0f} ms after setpoint publish "
-        f"(baseline {baseline:.0f} RPM)"
+        f"(baseline {baseline:.0f} RPM)",
+        quiet,
     )
 
 
 # ---------------------------------------------------------------------------
 # Test 4 — Sensor change displayed in software < 2 s
 # ---------------------------------------------------------------------------
-def test_sensor_display_latency() -> dict:
+def test_sensor_display_latency(quiet: bool = False) -> dict:
     """
     Requirement: changes at the sensor level shall be displayed in
     software within 2 seconds.
@@ -387,7 +390,7 @@ def test_sensor_display_latency() -> dict:
 
     client.on_message = on_message
     if not _connect_blocking(client):
-        return _result(name, False, "Could not connect to broker")
+        return _result(name, False, "Could not connect to broker", quiet)
 
     for topic in SENSOR_TOPICS.values():
         client.subscribe(topic, qos=0)
@@ -413,7 +416,8 @@ def test_sensor_display_latency() -> dict:
     if missing:
         return _result(
             name, False,
-            f"No two readings received for: {', '.join(missing)} — is the Pi running?"
+            f"No two readings received for: {', '.join(missing)} — is the Pi running?",
+            quiet,
         )
 
     worst_label = max(intervals, key=intervals.__getitem__)
@@ -422,7 +426,8 @@ def test_sensor_display_latency() -> dict:
     detail_parts = [f"{s}={v*1000:.0f}ms" for s, v in sorted(intervals.items())]
     return _result(
         name, passed,
-        f"worst={worst_label} {worst_s*1000:.0f} ms | " + ", ".join(detail_parts)
+        f"worst={worst_label} {worst_s*1000:.0f} ms | " + ", ".join(detail_parts),
+        quiet,
     )
 
 
@@ -437,12 +442,27 @@ def main() -> None:
     print(f"Limit  : {LATENCY_LIMIT_S * 1000:.0f} ms")
     print("=" * 60)
 
+    REPEAT = 20
+
+    def _worst(runs: list[dict]) -> dict:
+        """Return the worst result: any failure beats all passes; ties go to last."""
+        failures = [r for r in runs if not r["passed"]]
+        return failures[-1] if failures else runs[-1]
+
     results = [
         test_mqtt_latency(),
         test_dhcp_ethernet(),
-        test_control_response(),
-        test_sensor_display_latency(),
     ]
+
+    print(f"\n--- Control response ({REPEAT} runs) ---")
+    control_runs = [test_control_response(quiet=True) for _ in range(REPEAT)]
+    print(_worst(control_runs)["msg"].replace("] ", f" (worst of {REPEAT})] ", 1))
+    results.extend(control_runs)
+
+    print(f"\n--- Sensor display latency ({REPEAT} runs) ---")
+    sensor_runs = [test_sensor_display_latency(quiet=True) for _ in range(REPEAT)]
+    print(_worst(sensor_runs)["msg"].replace("] ", f" (worst of {REPEAT})] ", 1))
+    results.extend(sensor_runs)
 
     print("=" * 60)
     passed = sum(1 for r in results if r["passed"])
