@@ -97,6 +97,14 @@ SENSORS = {
     "EXV": 0x04,
 }
 ADS_ADDR = 0x48
+# ADS1115 channel index (0–3) for each pressure sensor.
+# Each circuit overrides this in its own config.py.
+PRESSURE_CHANNELS = {
+    "HighSide":   0,
+    "LowSide":    2,
+    "Evaporator": 3,
+    "EXV":        1,
+}
 
 # Pressure sensor (ratiometric 0.5–4.5 V, 0–300 PSI)
 P_MAX_PSI = 300.0

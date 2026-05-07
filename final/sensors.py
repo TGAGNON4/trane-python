@@ -17,6 +17,7 @@ from config import (
     P_MAX_PSI,
     P_V_MAX,
     P_V_MIN,
+    PRESSURE_CHANNELS,
     SENSORS,
     TZ,
 )
@@ -117,10 +118,11 @@ def read_live_line(mlxs, a0, a1, a2, a3) -> tuple[str, str, PressureRow, str]:
     evap_amb, evap_obj = safe_read_temp_c(mlxs[2])  # evap_amb is discharge air (PID input)
     exv_amb, exv_obj = safe_read_temp_c(mlxs[3])
 
-    high_p = safe_read_pressure_pa(a0)
-    low_p = safe_read_pressure_pa(a2)
-    evap_p = safe_read_pressure_pa(a3)
-    exv_p = safe_read_pressure_pa(a1)
+    ch = [a0, a1, a2, a3]
+    high_p = safe_read_pressure_pa(ch[PRESSURE_CHANNELS["HighSide"]])
+    low_p = safe_read_pressure_pa(ch[PRESSURE_CHANNELS["LowSide"]])
+    evap_p = safe_read_pressure_pa(ch[PRESSURE_CHANNELS["Evaporator"]])
+    exv_p = safe_read_pressure_pa(ch[PRESSURE_CHANNELS["EXV"]])
 
     space_temp = (high_amb + low_amb + evap_amb + exv_amb) / 4
 

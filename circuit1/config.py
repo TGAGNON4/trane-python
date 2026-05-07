@@ -24,3 +24,11 @@ SENSORS = {
 # tube overfeeds the evaporator, raising low-side pressure and reducing cooling
 # capacity. Cap the PID ceiling here to keep the system in an efficient range.
 VFD_MAX_RPM = 4400.0
+
+# ADS1115 channel index (0 = A0, 1 = A1, 2 = A2, 3 = A3) for each pressure sensor.
+PRESSURE_CHANNELS = {
+    "HighSide":   0,
+    "LowSide":    2,
+    "Evaporator": 3,
+    "EXV":        1,
+}

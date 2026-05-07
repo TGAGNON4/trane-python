@@ -23,5 +23,6 @@ All base defaults live in `final/config.py`. This directory's `config.py` overri
 | `SENSORS["Evaporator"]` | `0x3A` | I2C address of the evaporator MLX90614 |
 | `SENSORS["EXV"]` | `0x5A` | I2C address of the EXV MLX90614 |
 | `VFD_MAX_RPM` | `4400.0` | Reduced from base 4500 — Circuit1 uses a capillary tube; above ~4400 RPM the cap tube overfeeds the evaporator |
+| `PRESSURE_CHANNELS` | `{"HighSide": 0, "LowSide": 2, "Evaporator": 3, "EXV": 1}` | ADS1115 input index (A0–A3) for each pressure sensor |
 
 See `final/README.md` for full configuration reference, MQTT topics, data storage format, and startup sequence details.

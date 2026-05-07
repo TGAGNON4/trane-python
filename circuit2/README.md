@@ -25,4 +25,6 @@ All base defaults live in `final/config.py`. This directory's `config.py` overri
 
 Circuit2 uses a TEV (thermostatic expansion valve), which self-regulates superheat across the full speed range — no `VFD_MAX_RPM` ceiling is needed.
 
+`PRESSURE_CHANNELS` maps each sensor name to its ADS1115 input index (A0–A3). Update once wiring is confirmed.
+
 See `final/README.md` for full configuration reference, MQTT topics, data storage format, and startup sequence details.
