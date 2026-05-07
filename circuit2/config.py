@@ -19,8 +19,8 @@ CIRCUIT = "Circuit2"
 
 # TODO: replace with the addresses programmed into Circuit2's MLX90614s.
 SENSORS = {
-    "HighSide": 0x5A,
+    "HighSide": 0x5D,
     "LowSide": 0x5B,
-    "Evaporator": 0x5C,
-    "EXV": 0x5D,
+    "Evaporator": 0x5A,
+    "EXV": 0x5C,
 }
