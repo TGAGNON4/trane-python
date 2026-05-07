@@ -5,7 +5,7 @@ Scripts for the Trane senior design project — data collection, control, and MQ
 ## Directories
 
 ### `final/`
-Contains all application logic: sensor reading, PID control, PWM output, HMI communication, MQTT I/O, and data storage. Run `python main.py` from here.
+Contains all application logic. Key modules: `main.py` (orchestrator), `compressor.py` (PID/PWM/VFD), `sensors.py` (MLX90614 + ADS1115), `storage.py` (buffered file persistence), `hmi.py` (Nextion serial), `mqtt_handlers.py` / `mqtt_publish.py` / `mqtt_replay.py` (MQTT I/O), `coolprop_props.py` (R-1234yf thermodynamics). Run `python main.py` from here.
 
 ### `circuit1/` and `circuit2/`
 Deployment directories for each Pi. Each contains only a `config.py` (with circuit-specific settings like `CIRCUIT = "Circuit1"`) and a `main.py` shim. Running `python main.py` from either directory calls `final/main.py` with that circuit's config automatically.
