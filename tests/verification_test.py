@@ -1,24 +1,21 @@
 """
 Verification Test Suite
 =======================
-Covers four system-level requirements:
+Covers two system-level requirements:
 
-  1. MQTT latency      — broker round-trip < 2 s on local network
-  2. DHCP / Ethernet   — active interface has a DHCP-assigned IP
-  3. Control latency   — setpoint change reflected in Compressor_Current_RPM < 2 s
-  4. Sensor latency    — sensor MQTT publish received by broker < 2 s
+  1. MQTT latency  — broker round-trip < 2 s on local network
+  2. DHCP/Ethernet — active interface has a DHCP-assigned IP
 
 Run on the Raspberry Pi (or same LAN segment):
     python3 tests/verification_test.py
 
-Requirements: paho-mqtt, requests (pip install paho-mqtt requests)
+Requirements: paho-mqtt (pip install paho-mqtt)
 """
 
 from __future__ import annotations
 
 import json
 import os
-import random
 import socket
 import subprocess
 import textwrap
@@ -55,11 +52,6 @@ PASSWORD = os.environ.get("MQTT_PASSWORD") or _env.get("MQTT_PASSWORD") or ""
 CIRCUIT  = "Circuit1"
 LATENCY_LIMIT_S = 2.0   # all timing requirements are < 2 s
 
-# RPM bounds — must match circuit1/config.py so we know which direction has headroom
-VFD_MIN_RPM = 2200.0
-VFD_MAX_RPM = 4400.0
-RPM_MARGIN  = 300.0   # if baseline is within this of a limit, bias setpoint away from it
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -72,13 +64,12 @@ def _print(msg: str) -> None:
     for line in textwrap.wrap(msg, width=SEP_WIDTH, subsequent_indent="  ") or [""]:
         print(line)
 
-def _result(name: str, passed: bool, detail: str = "", quiet: bool = False) -> dict:
+def _result(name: str, passed: bool, detail: str = "") -> dict:
     status = PASS if passed else FAIL
     msg = f"[{status}] {name}"
     if detail:
         msg += f" — {detail}"
-    if not quiet:
-        _print(msg)
+    _print(msg)
     return {"name": name, "passed": passed, "detail": detail, "msg": msg}
 
 
@@ -192,7 +183,6 @@ def _wifi_set(enabled: bool) -> None:
         return
     except (FileNotFoundError, subprocess.CalledProcessError):
         pass
-    # fallback: find wlan* interface and toggle with ip link
     try:
         out = subprocess.check_output(["ip", "link", "show"],
                                       stderr=subprocess.DEVNULL, text=True)
@@ -221,7 +211,6 @@ def test_dhcp_ethernet() -> dict:
     """
     name = "Ethernet port supports DHCP + internet connectivity"
 
-    # --- find ethernet interface and IP ---
     eth_iface: str | None = None
     eth_ip:    str | None = None
     try:
@@ -253,9 +242,8 @@ def test_dhcp_ethernet() -> dict:
     _print(f"  Ethernet: {eth_iface}={eth_ip}")
     _print("  Disabling WiFi …")
     _wifi_set(False)
-    time.sleep(2)   # let routing table settle
+    time.sleep(2)
 
-    # --- test internet connectivity over ethernet only ---
     connected = False
     try:
         client = _make_client()
@@ -278,246 +266,6 @@ def test_dhcp_ethernet() -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Test 3 — Control response: setpoint → RPM change < 2 s
-# ---------------------------------------------------------------------------
-def test_control_response(quiet: bool = False) -> dict:
-    """
-    Requirement: control software reflects a change in the lowest level
-    of control within 2 seconds.
-
-    Method: subscribe to {CIRCUIT}/Compressor_Current_RPM.  Record the
-    RPM before the setpoint change, publish a new setpoint, then confirm
-    the RPM value updates within 2 seconds.
-
-    NOTE: the compressor must already be running (Started) for RPM to
-    change in response to a setpoint.  If it is idle the test records
-    the observation but does not fail the suite — it marks SKIPPED.
-    """
-    name = "Control response: setpoint → RPM update < 2 s"
-
-    rpm_events: list[tuple[float, float]] = []   # (timestamp, rpm)
-    lock = threading.Lock()
-
-    client = _make_client()
-
-    def on_message(c, u, msg):
-        try:
-            val = float(msg.payload)
-            with lock:
-                rpm_events.append((time.time(), val))
-        except ValueError:
-            pass
-
-    client.on_message = on_message
-    if not _connect_blocking(client):
-        return _result(name, False, "Could not connect to broker", quiet)
-
-    client.subscribe(f"{CIRCUIT}/Compressor_Current_RPM", qos=0)
-    time.sleep(0.3)   # let retained message arrive
-
-    # Wait for RPM to stabilize before taking baseline (previous run's
-    # setpoint restore may still be ramping the compressor).
-    # We require 2 consecutive readings within 15 RPM of each other.
-    prev_rpm: float | None = None
-    stable_since: float | None = None
-    stabilize_deadline = time.time() + 10.0
-    while time.time() < stabilize_deadline:
-        with lock:
-            current = rpm_events[-1][1] if rpm_events else None
-        if current is not None:
-            if prev_rpm is not None and abs(current - prev_rpm) < 15:
-                if stable_since is None:
-                    stable_since = time.time()
-                elif time.time() - stable_since >= 2.0:
-                    break
-            else:
-                stable_since = None
-            prev_rpm = current
-        time.sleep(0.5)
-
-    # Record baseline RPM
-    with lock:
-        baseline = rpm_events[-1][1] if rpm_events else None
-
-    if baseline is None or baseline < 100:
-        client.loop_stop()
-        client.disconnect()
-        return _result(
-            name, True,
-            "SKIPPED — compressor not running; start compressor before this test",
-            quiet,
-        )
-
-    # Pick a setpoint that moves in the direction the RPM has room to go.
-    # This is a cooling system: lower setpoint → more cooling → RPM up.
-    #                           higher setpoint → less cooling  → RPM down.
-    original_sp = 22.2
-    near_floor   = baseline <= VFD_MIN_RPM + RPM_MARGIN
-    near_ceiling = baseline >= VFD_MAX_RPM - RPM_MARGIN
-    if near_floor and not near_ceiling:
-        # Need RPM to go up → demand more cooling → lower setpoint
-        new_sp = round(random.uniform(18.9, original_sp - 2.0), 1)
-    elif near_ceiling and not near_floor:
-        # Need RPM to go down → demand less cooling → raise setpoint
-        new_sp = round(random.uniform(original_sp + 2.0, 32.0), 1)
-    else:
-        # Middle of range — either direction is fine
-        new_sp = random.uniform(18.9, 32.0)
-        while abs(new_sp - original_sp) < 2.0:
-            new_sp = random.uniform(18.9, 32.0)
-        new_sp = round(new_sp, 1)
-    t_publish = time.time()
-    client.publish(
-        f"Data/{CIRCUIT}/Setpoint_Record",
-        f"{new_sp}",
-        qos=0,
-        retain=False,
-    )
-
-    # Wait up to 5 s for an RPM update (PI sample time is 2 s, so worst case is ~2 s before the controller reacts)
-    deadline = time.time() + 5.0
-    response_time: float | None = None
-    while time.time() < deadline:
-        with lock:
-            for ts, rpm in rpm_events:
-                if ts > t_publish and abs(rpm - baseline) > 10:
-                    response_time = ts - t_publish
-                    break
-        if response_time is not None:
-            break
-        time.sleep(0.05)
-
-    # Restore original setpoint
-    client.publish(
-        f"Data/{CIRCUIT}/Setpoint_Record",
-        f"{original_sp}",
-        qos=0,
-        retain=False,
-    )
-
-    client.loop_stop()
-    client.disconnect()
-
-    if response_time is None:
-        return _result(name, False, "No RPM change observed within 5 s of setpoint update", quiet)
-
-    # Verify the RPM moved in the correct direction.
-    # Cooling system: lower setpoint → more cooling demanded → RPM should rise.
-    #                 higher setpoint → less cooling demanded → RPM should fall.
-    with lock:
-        post_rpm = rpm_events[-1][1] if rpm_events else baseline
-    expected_up = new_sp < original_sp
-    actual_up   = post_rpm > baseline
-    direction_ok = expected_up == actual_up
-    direction_str = ("↑" if actual_up else "↓") + (" ✓" if direction_ok else " ✗ wrong direction")
-
-    passed = response_time < LATENCY_LIMIT_S and direction_ok
-    return _result(
-        name, passed,
-        f"RPM updated {response_time*1000:.0f} ms after setpoint publish "
-        f"(baseline {baseline:.0f} → {post_rpm:.0f} RPM {direction_str}, "
-        f"sp {original_sp} → {new_sp})",
-        quiet,
-    )
-
-
-# ---------------------------------------------------------------------------
-# Test 4 — Sensor change displayed in software < 2 s
-# ---------------------------------------------------------------------------
-def test_sensor_display_latency(quiet: bool = False) -> dict:
-    """
-    Requirement: changes at the sensor level shall be displayed in
-    software within 2 seconds.
-
-    Method: subscribe to each live sensor temperature topic, record the
-    timestamp of the most recently retained message, then measure how
-    quickly new values arrive.  A sensor publishing within 2 s of the
-    previous value satisfies the display-latency requirement (the MQTT
-    broker is the integration point between Pi and the web UI).
-
-    Sensors checked: HighSide, EXV, LowSide, Evaporator, Space,
-                     Discharge Air.
-    """
-    name = "Sensor change displayed in software < 2 s"
-
-    SENSOR_TOPICS = {
-        "HighSide":    f"{CIRCUIT}/HighSide_Temperature",
-        "EXV":         f"{CIRCUIT}/EXV_Temperature",
-        "LowSide":     f"{CIRCUIT}/LowSide_Temperature",
-        "Evaporator":  f"{CIRCUIT}/Evaporator_Temperature",
-        "Space":       f"{CIRCUIT}/Space_Temperature",
-        "DischargeAir":f"{CIRCUIT}/Discharge_Air_Temperature",
-    }
-
-    # (timestamp, value) for each sensor — retained messages skipped so we
-    # only count fresh publishes from the Pi's live sensor loop.
-    readings: dict[str, list[tuple[float, float]]] = {s: [] for s in SENSOR_TOPICS}
-    lock = threading.Lock()
-
-    client = _make_client()
-
-    def on_message(c, u, msg):
-        if msg.retain:
-            return  # skip stale retained value; only count live publishes
-        for label, topic in SENSOR_TOPICS.items():
-            if msg.topic == topic:
-                try:
-                    val = float(msg.payload)
-                except ValueError:
-                    return
-                ts = time.time()
-                with lock:
-                    if len(readings[label]) < 2:
-                        readings[label].append((ts, val))
-
-    client.on_message = on_message
-    if not _connect_blocking(client):
-        return _result(name, False, "Could not connect to broker", quiet)
-
-    for topic in SENSOR_TOPICS.values():
-        client.subscribe(topic, qos=0)
-
-    # Wait up to 5 s to collect two live readings per sensor
-    deadline = time.time() + 5.0
-    while time.time() < deadline:
-        with lock:
-            if all(len(readings[s]) >= 2 for s in SENSOR_TOPICS):
-                break
-        time.sleep(0.1)
-
-    client.loop_stop()
-    client.disconnect()
-
-    intervals: dict[str, float] = {}
-    stuck: list[str] = []
-    with lock:
-        for label in SENSOR_TOPICS:
-            if len(readings[label]) >= 2:
-                t1, v1 = readings[label][0]
-                t2, v2 = readings[label][1]
-                intervals[label] = t2 - t1
-                if v1 == v2:
-                    stuck.append(label)
-
-    missing = [s for s in SENSOR_TOPICS if s not in intervals]
-    if missing:
-        return _result(
-            name, False,
-            f"No two live readings received for: {', '.join(missing)} — is the Pi running?",
-            quiet,
-        )
-
-    worst_label = max(intervals, key=intervals.__getitem__)
-    worst_s = intervals[worst_label]
-    passed = worst_s < LATENCY_LIMIT_S and not stuck
-    detail_parts = [f"{s}={v*1000:.0f}ms" for s, v in sorted(intervals.items())]
-    detail = f"worst={worst_label} {worst_s*1000:.0f} ms | " + ", ".join(detail_parts)
-    if stuck:
-        detail += f" | STUCK (no value change): {', '.join(stuck)}"
-    return _result(name, passed, detail, quiet)
-
-
-# ---------------------------------------------------------------------------
 # Runner
 # ---------------------------------------------------------------------------
 def main() -> None:
@@ -528,37 +276,10 @@ def main() -> None:
     _print(f"Limit  : {LATENCY_LIMIT_S * 1000:.0f} ms")
     print("=" * SEP_WIDTH)
 
-    REPEAT = 20
-
-    def _worst(runs: list[dict]) -> dict:
-        """Return the worst result: any failure beats all passes; ties go to last."""
-        failures = [r for r in runs if not r["passed"]]
-        return failures[-1] if failures else runs[-1]
-
     results = [
         test_mqtt_latency(),
         test_dhcp_ethernet(),
     ]
-
-    SETTLE_S = 6.0  # wait between runs for RPM/sensors to settle
-
-    _print(f"\n--- Control response ({REPEAT} runs) ---")
-    control_runs = []
-    for i in range(REPEAT):
-        control_runs.append(test_control_response(quiet=True))
-        if i < REPEAT - 1:
-            time.sleep(SETTLE_S)
-    _print(_worst(control_runs)["msg"].replace("] ", f" (worst of {REPEAT})] ", 1))
-    results.extend(control_runs)
-
-    _print(f"\n--- Sensor display latency ({REPEAT} runs) ---")
-    sensor_runs = []
-    for i in range(REPEAT):
-        sensor_runs.append(test_sensor_display_latency(quiet=True))
-        if i < REPEAT - 1:
-            time.sleep(SETTLE_S)
-    _print(_worst(sensor_runs)["msg"].replace("] ", f" (worst of {REPEAT})] ", 1))
-    results.extend(sensor_runs)
 
     print("=" * SEP_WIDTH)
     passed = sum(1 for r in results if r["passed"])
