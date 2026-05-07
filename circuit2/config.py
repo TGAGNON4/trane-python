@@ -25,6 +25,8 @@ SENSORS = {
     "EXV": 0x5C,
 }
 
+HMI_SETPOINT_MIN_C = 12.8  # 55°F — Circuit2 (TEV) handles lower setpoints reliably
+
 # ADS1115 channel index (0 = A0, 1 = A1, 2 = A2, 3 = A3) for each pressure sensor.
 PRESSURE_CHANNELS = {
     "HighSide":   1,
