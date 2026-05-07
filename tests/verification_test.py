@@ -17,6 +17,7 @@ Requirements: paho-mqtt, requests (pip install paho-mqtt requests)
 from __future__ import annotations
 
 import json
+import os
 import random
 import socket
 import subprocess
@@ -24,22 +25,39 @@ import textwrap
 import threading
 import time
 import uuid
+from pathlib import Path
 
 import paho.mqtt.client as mqtt
+
+
+def _load_env() -> dict[str, str]:
+    env_path = Path(__file__).resolve().parent.parent / ".env"
+    if not env_path.exists():
+        return {}
+    out: dict[str, str] = {}
+    for line in env_path.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, val = line.partition("=")
+        out[key.strip()] = val.strip().strip('"').strip("'")
+    return out
+
+_env = _load_env()
 
 # ---------------------------------------------------------------------------
 # Configuration — mirrors final/config.py broker settings
 # ---------------------------------------------------------------------------
 BROKER   = "seniordesignmqtt.duckdns.org"
 PORT     = 1883
-USERNAME = "dev"
-PASSWORD = "trAneEseNdeS_4321"
+USERNAME = os.environ.get("MQTT_USERNAME") or _env.get("MQTT_USERNAME") or "dev"
+PASSWORD = os.environ.get("MQTT_PASSWORD") or _env.get("MQTT_PASSWORD") or ""
 CIRCUIT  = "Circuit1"
 LATENCY_LIMIT_S = 2.0   # all timing requirements are < 2 s
 
 # RPM bounds — must match circuit1/config.py so we know which direction has headroom
 VFD_MIN_RPM = 2200.0
-VFD_MAX_RPM = 3800.0
+VFD_MAX_RPM = 4400.0
 RPM_MARGIN  = 300.0   # if baseline is within this of a limit, bias setpoint away from it
 
 # ---------------------------------------------------------------------------
@@ -383,11 +401,22 @@ def test_control_response(quiet: bool = False) -> dict:
     if response_time is None:
         return _result(name, False, "No RPM change observed within 5 s of setpoint update", quiet)
 
-    passed = response_time < LATENCY_LIMIT_S
+    # Verify the RPM moved in the correct direction.
+    # Cooling system: lower setpoint → more cooling demanded → RPM should rise.
+    #                 higher setpoint → less cooling demanded → RPM should fall.
+    with lock:
+        post_rpm = rpm_events[-1][1] if rpm_events else baseline
+    expected_up = new_sp < original_sp
+    actual_up   = post_rpm > baseline
+    direction_ok = expected_up == actual_up
+    direction_str = ("↑" if actual_up else "↓") + (" ✓" if direction_ok else " ✗ wrong direction")
+
+    passed = response_time < LATENCY_LIMIT_S and direction_ok
     return _result(
         name, passed,
         f"RPM updated {response_time*1000:.0f} ms after setpoint publish "
-        f"(baseline {baseline:.0f} RPM)",
+        f"(baseline {baseline:.0f} → {post_rpm:.0f} RPM {direction_str}, "
+        f"sp {original_sp} → {new_sp})",
         quiet,
     )
 
@@ -420,21 +449,26 @@ def test_sensor_display_latency(quiet: bool = False) -> dict:
         "DischargeAir":f"{CIRCUIT}/Discharge_Air_Temperature",
     }
 
-    first_rx: dict[str, float] = {}   # sensor → first timestamp
-    second_rx: dict[str, float] = {}  # sensor → second timestamp
+    # (timestamp, value) for each sensor — retained messages skipped so we
+    # only count fresh publishes from the Pi's live sensor loop.
+    readings: dict[str, list[tuple[float, float]]] = {s: [] for s in SENSOR_TOPICS}
     lock = threading.Lock()
 
     client = _make_client()
 
     def on_message(c, u, msg):
+        if msg.retain:
+            return  # skip stale retained value; only count live publishes
         for label, topic in SENSOR_TOPICS.items():
             if msg.topic == topic:
+                try:
+                    val = float(msg.payload)
+                except ValueError:
+                    return
                 ts = time.time()
                 with lock:
-                    if label not in first_rx:
-                        first_rx[label] = ts
-                    elif label not in second_rx:
-                        second_rx[label] = ts
+                    if len(readings[label]) < 2:
+                        readings[label].append((ts, val))
 
     client.on_message = on_message
     if not _connect_blocking(client):
@@ -443,11 +477,11 @@ def test_sensor_display_latency(quiet: bool = False) -> dict:
     for topic in SENSOR_TOPICS.values():
         client.subscribe(topic, qos=0)
 
-    # Wait up to 5 s to collect two readings per sensor
+    # Wait up to 5 s to collect two live readings per sensor
     deadline = time.time() + 5.0
     while time.time() < deadline:
         with lock:
-            if len(second_rx) == len(SENSOR_TOPICS):
+            if all(len(readings[s]) >= 2 for s in SENSOR_TOPICS):
                 break
         time.sleep(0.1)
 
@@ -455,28 +489,32 @@ def test_sensor_display_latency(quiet: bool = False) -> dict:
     client.disconnect()
 
     intervals: dict[str, float] = {}
+    stuck: list[str] = []
     with lock:
         for label in SENSOR_TOPICS:
-            if label in first_rx and label in second_rx:
-                intervals[label] = second_rx[label] - first_rx[label]
+            if len(readings[label]) >= 2:
+                t1, v1 = readings[label][0]
+                t2, v2 = readings[label][1]
+                intervals[label] = t2 - t1
+                if v1 == v2:
+                    stuck.append(label)
 
     missing = [s for s in SENSOR_TOPICS if s not in intervals]
     if missing:
         return _result(
             name, False,
-            f"No two readings received for: {', '.join(missing)} — is the Pi running?",
+            f"No two live readings received for: {', '.join(missing)} — is the Pi running?",
             quiet,
         )
 
     worst_label = max(intervals, key=intervals.__getitem__)
     worst_s = intervals[worst_label]
-    passed = worst_s < LATENCY_LIMIT_S
+    passed = worst_s < LATENCY_LIMIT_S and not stuck
     detail_parts = [f"{s}={v*1000:.0f}ms" for s, v in sorted(intervals.items())]
-    return _result(
-        name, passed,
-        f"worst={worst_label} {worst_s*1000:.0f} ms | " + ", ".join(detail_parts),
-        quiet,
-    )
+    detail = f"worst={worst_label} {worst_s*1000:.0f} ms | " + ", ".join(detail_parts)
+    if stuck:
+        detail += f" | STUCK (no value change): {', '.join(stuck)}"
+    return _result(name, passed, detail, quiet)
 
 
 # ---------------------------------------------------------------------------

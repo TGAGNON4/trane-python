@@ -23,4 +23,4 @@ SENSORS = {
 # Circuit1 uses a capillary tube (fixed restriction). Above a certain RPM the cap
 # tube overfeeds the evaporator, raising low-side pressure and reducing cooling
 # capacity. Cap the PID ceiling here to keep the system in an efficient range.
-VFD_MAX_RPM = 4200.0
+VFD_MAX_RPM = 4400.0
