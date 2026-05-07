@@ -29,6 +29,6 @@ SENSORS = {
 PRESSURE_CHANNELS = {
     "HighSide":   3,
     "LowSide":    0,
-    "Evaporator": 1,
-    "EXV":        2,
+    "Evaporator": 2,
+    "EXV":        1,
 }
