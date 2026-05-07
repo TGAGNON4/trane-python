@@ -27,8 +27,8 @@ SENSORS = {
 
 # ADS1115 channel index (0 = A0, 1 = A1, 2 = A2, 3 = A3) for each pressure sensor.
 PRESSURE_CHANNELS = {
-    "HighSide":   3,
+    "HighSide":   1,
     "LowSide":    0,
     "Evaporator": 2,
-    "EXV":        1,
+    "EXV":        3,
 }
