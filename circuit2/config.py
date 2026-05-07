@@ -28,8 +28,8 @@ SENSORS = {
 # ADS1115 channel index (0 = A0, 1 = A1, 2 = A2, 3 = A3) for each pressure sensor.
 # TODO: update once Circuit2's wiring is confirmed.
 PRESSURE_CHANNELS = {
-    "HighSide":   0,
-    "LowSide":    2,
-    "Evaporator": 3,
+    "HighSide":   3,
+    "LowSide":    0,
+    "Evaporator": 2,
     "EXV":        1,
 }
