@@ -38,6 +38,8 @@ except Exception as exc:
     adafruit_mlx90614 = None
     SENSOR_IMPORT_ERROR = exc
 
+_i2c = None  # shared bus reference kept for reconnect attempts
+
 
 def init_i2c_devices():
     """Initialize I2C bus, ADS1115, and MLX sensors.
@@ -45,15 +47,16 @@ def init_i2c_devices():
     Returns None if libraries aren't installed; returns placeholder None devices
     when hardware is missing so that reads simply yield NaN.
     """
+    global _i2c
     if board is None or busio is None or ADS is None or AnalogIn is None or adafruit_mlx90614 is None:
         return None
     try:
-        i2c = busio.I2C(board.SCL, board.SDA)
+        _i2c = busio.I2C(board.SCL, board.SDA)
     except Exception as exc:
         print(f"I2C bus init failed ({exc}); running with no sensors (all NaN)")
         return [None, None, None, None], None, None, None, None
     try:
-        ads = ADS.ADS1115(i2c, address=ADS_ADDR)
+        ads = ADS.ADS1115(_i2c, address=ADS_ADDR)
         ads.gain = 2 / 3  # ±6.144 V range — required to read 4.5 V full-scale output
         a0 = AnalogIn(ads, 0)
         a1 = AnalogIn(ads, 1)
@@ -65,9 +68,39 @@ def init_i2c_devices():
     mlxs = []
     for addr in SENSORS.values():
         try:
-            mlxs.append(adafruit_mlx90614.MLX90614(i2c, address=addr))
+            mlxs.append(adafruit_mlx90614.MLX90614(_i2c, address=addr))
         except Exception:
             mlxs.append(None)
+    return mlxs, a0, a1, a2, a3
+
+
+def try_reconnect_sensors(mlxs, a0, a1, a2, a3):
+    """Attempt to reconnect any None sensor slots. Returns updated device tuple."""
+    if _i2c is None or adafruit_mlx90614 is None:
+        return mlxs, a0, a1, a2, a3
+
+    sensor_names = list(SENSORS.keys())
+    sensor_addrs = list(SENSORS.values())
+    for i, mlx in enumerate(mlxs):
+        if mlx is None:
+            try:
+                mlxs[i] = adafruit_mlx90614.MLX90614(_i2c, address=sensor_addrs[i])
+                print(f"Reconnected {sensor_names[i]} MLX at 0x{sensor_addrs[i]:02X}")
+            except Exception:
+                pass
+
+    if any(ch is None for ch in (a0, a1, a2, a3)):
+        try:
+            ads = ADS.ADS1115(_i2c, address=ADS_ADDR)
+            ads.gain = 2 / 3
+            a0 = AnalogIn(ads, 0)
+            a1 = AnalogIn(ads, 1)
+            a2 = AnalogIn(ads, 2)
+            a3 = AnalogIn(ads, 3)
+            print("Reconnected ADS1115 pressure channels")
+        except Exception:
+            pass
+
     return mlxs, a0, a1, a2, a3
 
 

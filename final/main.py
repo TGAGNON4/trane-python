@@ -31,6 +31,7 @@ from config import (
     RAM_BUFFER_MAX_SECONDS,
     RUN_FOR_SECONDS,
     SAMPLE_SECONDS,
+    SENSOR_RECONNECT_INTERVAL,
     SPACE_SETPOINT,
     STORAGE_PURGE_CHECK_INTERVAL,
     USERNAME,
@@ -38,7 +39,7 @@ from config import (
 from hmi import HMIController, SERIAL_IMPORT_ERROR, serial
 from mqtt_handlers import attach
 from mqtt_publish import data_topic, publish_row
-from sensors import SENSOR_IMPORT_ERROR, init_i2c_devices, read_live_line
+from sensors import SENSOR_IMPORT_ERROR, init_i2c_devices, read_live_line, try_reconnect_sensors
 from storage import (
     append_setpoint,
     flush_buffers,
@@ -231,12 +232,20 @@ class Application:
         print("Starting live data collection...")
         start_ts = time.time()
         last_status_print_ts = time.time()
+        last_reconnect_ts = 0.0
         sample_count = 0
 
         while True:
             if RUN_FOR_SECONDS is not None and (time.time() - start_ts) >= RUN_FOR_SECONDS:
                 print(f"Reached run limit ({RUN_FOR_SECONDS}s). Stopping data server...")
                 return
+
+            now = time.time()
+            mlxs, a0, a1, a2, a3 = self.i2c_devices
+            if now - last_reconnect_ts >= SENSOR_RECONNECT_INTERVAL:
+                if any(m is None for m in mlxs) or any(ch is None for ch in (a0, a1, a2, a3)):
+                    self.i2c_devices = try_reconnect_sensors(mlxs, a0, a1, a2, a3)
+                last_reconnect_ts = now
 
             temp_line, pressure_line, pressure, line_date = read_live_line(*self.i2c_devices)
             sample_count += 1

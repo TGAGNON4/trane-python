@@ -97,6 +97,7 @@ SENSORS = {
     "EXV": 0x04,
 }
 ADS_ADDR = 0x48
+SENSOR_RECONNECT_INTERVAL = 10.0  # seconds between reconnect attempts for failed sensors
 # ADS1115 channel index (0–3) for each pressure sensor.
 # Each circuit overrides this in its own config.py.
 PRESSURE_CHANNELS = {
