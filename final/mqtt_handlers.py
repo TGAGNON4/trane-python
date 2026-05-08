@@ -49,6 +49,8 @@ def _on_connect(app, client) -> None:
         client.subscribe(data_topic(CIRCUIT, name))
     client.subscribe(f"{CIRCUIT}/Compressor_RPM")
 
+    client.publish(f"{CIRCUIT}/Session_Lock", "", qos=0, retain=True)
+
     unit = app.hmi.get_unit() if app.hmi is not None else app.display_unit
     client.publish(f"{CIRCUIT}/Unit", unit, qos=0, retain=True)
     publish_available_dates(client, BASE_DIR, CIRCUIT)
