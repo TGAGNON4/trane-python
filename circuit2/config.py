@@ -17,12 +17,11 @@ CIRCUIT = "Circuit2"
 # superheat across the full compressor speed range. No RPM ceiling needed —
 # the base VFD_MAX_RPM of 4500 RPM applies.
 
-# TODO: replace with the addresses programmed into Circuit2's MLX90614s.
 SENSORS = {
-    "HighSide": 0x5D,
+    "HighSide": 0x5C,
     "LowSide": 0x5B,
     "Evaporator": 0x5A,
-    "EXV": 0x5C,
+    "EXV": 0x5D,
 }
 
 HMI_SETPOINT_MIN_C = 12.8  # 55°F — Circuit2 (TEV) handles lower setpoints reliably
