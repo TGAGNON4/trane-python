@@ -20,23 +20,59 @@ One-off hardware and sensor test scripts (I2C, ADS, MLX, etc.). Not part of the 
 
 ### 1. Flash Raspberry Pi OS
 
-Download and install the [Raspberry Pi Imager](https://www.raspberrypi.com/software/). Flash **Raspberry Pi OS (64-bit)** to an SD card. In the imager's advanced settings, configure your hostname, username, password, and Wi-Fi before writing so the Pi is reachable on first boot or have a monitor and peripherals to login into the Pi.
+Download and install the [Raspberry Pi Imager](https://www.raspberrypi.com/software/). Flash **Raspberry Pi OS (64-bit)** to an SD card. In the imager's advanced settings, configure your hostname, username (`team6`), password, and Wi-Fi before writing so the Pi is reachable on first boot, or use a monitor and peripherals to log in directly.
 
-### 2. Clone this repo
+### 2. Enable SSH
+
+SSH is disabled by default on Raspberry Pi OS. Enable it via `raspi-config`:
 
 ```bash
-git clone https://github.com/TGAGNON4/trane-scripts.git
-cd trane-scripts
+sudo raspi-config
 ```
 
-### 3. Create a virtual environment
+Navigate to **Interface Options → SSH** and select **Enable**. Alternatively, if you used the Imager's advanced settings you can enable SSH there before flashing.
+
+### 3. Enable UART for the HMI display and disable serial console login
+
+The Nextion HMI connects over the hardware UART pins (GPIO 14/15). By default the Pi uses those pins as a serial console for login, which conflicts with the HMI. You need to enable the UART hardware and disable the login shell on it.
+
+Run `raspi-config`:
+
+```bash
+sudo raspi-config
+```
+
+Navigate to **Interface Options → Serial Port**:
+- **Would you like a login shell to be accessible over the serial port?** → **No**
+- **Would you like the serial port hardware to be enabled?** → **Yes**
+
+Finish and reboot. After rebooting, `/dev/serial0` (aliased to `/dev/ttyAMA0` or `/dev/ttyS0` depending on the Pi model) will be available for the HMI without a conflicting getty process.
+
+### 4. Add team6 to the gpio group
+
+The compressor speed is controlled via `RPi.GPIO`, which requires access to `/dev/gpiomem`. Raspberry Pi OS ships with a `gpio` group that has this access:
+
+```bash
+sudo usermod -aG gpio team6
+```
+
+Log out and back in (or reboot) for the group membership to take effect.
+
+### 5. Clone this repo
+
+```bash
+git clone https://github.com/TGAGNON4/trane-python.git
+cd trane-python
+```
+
+### 6. Create a virtual environment
 
 ```bash
 python3 -m venv ../venv
-source ../venv/bin/activate
+source ../adsenv/bin/activate
 ```
 
-### 4. Install dependencies
+### 7. Install dependencies
 
 Each subdirectory that requires packages has its own README listing what to install. Follow the relevant one for your Pi (e.g. `circuit1/README.md` or `circuit2/README.md`), then install with:
 
@@ -69,9 +105,11 @@ Paste this:
 #!/bin/bash
 
 cd /home/team6/trane-python
-git pull origin main
 
-source /home/team6/adsenv/bin/activate
+# disabled for security purposes
+#git pull origin main
+
+source /home/team6/venv/bin/activate
 python3 /home/team6/trane-python/circuit1/main.py
 ```
 
@@ -129,3 +167,112 @@ sudo systemctl start circuit1.service
 ```bash
 sudo systemctl status circuit1.service
 ```
+
+---
+
+## AWS EC2 MQTT Broker Setup
+
+This documents how to set up a Mosquitto MQTT broker on an EC2 instance with WebSocket support so both the Raspberry Pis (plain MQTT on port 1883) and the browser dashboard (MQTT-over-WebSockets on port 8083) can connect.
+
+### 1. Launch an EC2 instance
+
+1. Open the [EC2 Console](https://console.aws.amazon.com/ec2/) and click **Launch instance**.
+2. Choose **Ubuntu Server 22.04 LTS** (free tier eligible, `t2.micro`).
+3. Create or select a key pair and download the `.pem` file — you need it to SSH in.
+4. Under **Network settings**, create a security group with the following inbound rules:
+
+| Type       | Protocol | Port | Source    | Purpose                          |
+|------------|----------|------|-----------|----------------------------------|
+| SSH        | TCP      | 22   | Your IP   | Admin access                     |
+| Custom TCP | TCP      | 1883 | 0.0.0.0/0 | MQTT (Raspberry Pis)            |
+| Custom TCP | TCP      | 8083 | 0.0.0.0/0 | MQTT over WebSockets (browser)  |
+
+5. Launch the instance and note its **Public IPv4 address** or DNS name.
+
+### 2. SSH into the instance
+
+```bash
+chmod 400 your-key.pem
+ssh -i your-key.pem ubuntu@<your-ec2-public-ip>
+```
+
+### 3. Install Mosquitto
+
+```bash
+sudo apt update
+sudo apt install -y mosquitto mosquitto-clients
+sudo systemctl enable mosquitto
+```
+
+### 4. Create a password file
+
+Do **not** put passwords in the config file in plain text. Use Mosquitto's password utility:
+
+```bash
+sudo mosquitto_passwd -c /etc/mosquitto/passwd <username>
+```
+
+You will be prompted to enter and confirm the password. To add more users later (without the `-c` flag, which overwrites the file):
+
+```bash
+sudo mosquitto_passwd /etc/mosquitto/passwd <another-username>
+```
+
+### 5. Configure Mosquitto
+
+```bash
+sudo nano /etc/mosquitto/conf.d/trane.conf
+```
+
+Paste the following:
+
+```
+# Plain MQTT listener (Raspberry Pis)
+listener 1883
+allow_anonymous false
+password_file /etc/mosquitto/passwd
+
+# WebSocket listener (browser dashboard)
+listener 8083
+protocol websockets
+allow_anonymous false
+password_file /etc/mosquitto/passwd
+```
+
+Save and exit: `Ctrl+X` → `Y` → `Enter`
+
+### 6. Restart and verify
+
+```bash
+sudo systemctl restart mosquitto
+sudo systemctl status mosquitto
+```
+
+Test from a separate terminal (replace values as needed):
+
+```bash
+mosquitto_sub -h <your-ec2-ip> -p 1883 -u <username> -P <password> -t test/#
+```
+
+In another terminal:
+
+```bash
+mosquitto_pub -h <your-ec2-ip> -p 1883 -u <username> -P <password> -t test/hello -m "world"
+```
+
+### 7. Point the Pis and dashboard at the new broker
+
+In each Pi's `circuit1/config.py` or `circuit2/config.py`, update:
+
+```python
+BROKER = "<your-ec2-public-ip-or-dns>"
+PORT   = 1883
+```
+
+In the dashboard (`src/hooks/MQTT.ts`), update the broker URL:
+
+```typescript
+url: "wss://<your-ec2-public-ip-or-dns>:8083"
+```
+
+> **Note:** Browsers require WSS (encrypted WebSockets) when the dashboard is served over HTTPS. To enable TLS, obtain a certificate (e.g. via Let's Encrypt with `certbot`) and add `cafile`, `certfile`, and `keyfile` paths to the Mosquitto listener config. Plain `ws://` works when the dashboard is accessed over HTTP only.
