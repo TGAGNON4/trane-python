@@ -12,6 +12,7 @@ from config import (
     HMI_ENABLED,
     SPACE_SETPOINT,
     VFD_MAX_RPM,
+    VFD_MIN_RPM,
     VFD_RPM_AT_MIN_SPEED,
 )
 from mqtt_publish import (
@@ -50,6 +51,8 @@ def _on_connect(app, client) -> None:
     client.subscribe(f"{CIRCUIT}/Compressor_RPM")
 
     client.publish(f"{CIRCUIT}/Session_Lock", "", qos=0, retain=True)
+    client.publish(f"{CIRCUIT}/VFD_Min_RPM", str(VFD_MIN_RPM), qos=0, retain=True)
+    client.publish(f"{CIRCUIT}/VFD_Max_RPM", str(VFD_MAX_RPM), qos=0, retain=True)
 
     unit = app.hmi.get_unit() if app.hmi is not None else app.display_unit
     client.publish(f"{CIRCUIT}/Unit", unit, qos=0, retain=True)
@@ -132,6 +135,6 @@ def _handle_compressor_rpm(app, payload: str) -> None:
         rpm_val = float(payload)
     except ValueError:
         return
-    rpm_val = max(VFD_RPM_AT_MIN_SPEED, min(VFD_MAX_RPM, rpm_val))
+    rpm_val = max(VFD_MIN_RPM, min(VFD_MAX_RPM, rpm_val))
     app.compressor.set_override_rpm(rpm_val)
     print(f"Set RPM override via MQTT: {rpm_val}")

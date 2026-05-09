@@ -244,6 +244,11 @@ class HMIController:
             self._nextion_send(f"{HMI_COMPONENT_SETPOINT}.val={s}")
             self._update_bounds_for_unit(new_unit)
             self.update_display()
+            # Discard any queued unit events so pump() only sees the final state,
+            # not every intermediate toggle from a rapid button press.
+            while not self._unit_q.empty():
+                try: self._unit_q.get_nowait()
+                except queue.Empty: break
             try:
                 self._unit_q.put_nowait(new_unit)
             except queue.Full:

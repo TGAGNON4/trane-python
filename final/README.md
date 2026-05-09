@@ -44,12 +44,12 @@ All tunable values are in `config.py`. Key settings:
 | Setting | Default | Description |
 |---|---|---|
 | `CIRCUIT` | `"Circuit1"` | Change to `"Circuit2"` for the second Pi |
-| `SPACE_SETPOINT` | `5.0` | Initial temperature setpoint (°C) |
+| `SPACE_SETPOINT` | `22.2` | Initial temperature setpoint (°C, ~72°F) |
 | `SAMPLE_SECONDS` | `1.0` | Sensor read interval |
 | `PID_KP / KI / KD` | `0.3 / 0.02 / 0.0` | PID gains (PI by default) |
-| `PID_SAMPLE_TIME` | `2.0` | Seconds between PID updates |
+| `PID_SAMPLE_TIME` | `1.0` | Seconds between PID updates |
 | `PID_ON_THRESHOLD` | `0.1` | Minimum PID output before compressor turns on |
-| `VFD_MIN_RPM / VFD_MAX_RPM` | `2300 / 4600` | Compressor operating range |
+| `VFD_MIN_RPM / VFD_MAX_RPM` | `2200 / 4500` | Compressor operating range |
 | `VFD_FREQ_OFF` | `300` | PWM frequency (Hz) sent to VFD when compressor is off |
 | `VFD_FREQ_AT_MIN_SPEED / VFD_RPM_AT_MIN_SPEED` | `1000 / 2000` | VFD hardware scale lower endpoint (Hz / RPM) |
 | `VFD_FREQ_AT_MAX_SPEED / VFD_RPM_AT_MAX_SPEED` | `10000 / 6000` | VFD hardware scale upper endpoint (Hz / RPM) |
