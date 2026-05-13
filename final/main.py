@@ -172,12 +172,20 @@ class Application:
             )
 
     def request_shutdown(self, source: str) -> None:
+        status = self.compressor.status()
+        if status != "Running":
+            print(f"Shutdown request from {source} ignored — status is '{status}'")
+            return
         self.compressor.shutdown_to_min()
         self.client.publish(data_topic(CIRCUIT, "Compressor_Shutdown_Status"), "ramping_to_min", qos=0, retain=True)
         self.client.publish(f"{CIRCUIT}/Status", "Shutting Down", qos=0, retain=True)
         print(f"Compressor shutdown requested via {source} — ramping to min RPM")
 
     def request_start(self, source: str) -> None:
+        status = self.compressor.status()
+        if status != "Off":
+            print(f"Start request from {source} ignored — status is '{status}'")
+            return
         self.compressor.restart_sequence()
         self.client.publish(f"{CIRCUIT}/Status", "Starting", qos=0, retain=True)
         print(f"Compressor start requested via {source} — restarting startup sequence")
