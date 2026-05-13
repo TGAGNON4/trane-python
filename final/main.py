@@ -177,6 +177,7 @@ class Application:
             print(f"Shutdown request from {source} ignored — status is '{status}'")
             return
         self.compressor.shutdown_to_min()
+        self.client.publish(f"{CIRCUIT}/Compressor_RPM", "", qos=0, retain=True)
         self.client.publish(data_topic(CIRCUIT, "Compressor_Shutdown_Status"), "ramping_to_min", qos=0, retain=True)
         self.client.publish(f"{CIRCUIT}/Status", "Shutting Down", qos=0, retain=True)
         print(f"Compressor shutdown requested via {source} — ramping to min RPM")
