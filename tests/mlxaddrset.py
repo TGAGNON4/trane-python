@@ -1,3 +1,14 @@
+# mlxaddrset.py — Reprograms the I2C address stored in an MLX90614 sensor's EEPROM.
+#
+# Connect ONE sensor at a time to the I2C bus before running this script.
+# Set CURRENT_ADDR to the sensor's current address (factory default is 0x5A).
+# Set NEW_ADDR to the desired address for this sensor:
+#   Circuit 1 addresses: 0x1A, 0x3A, 0x4A, 0x5A
+#   Circuit 2 addresses: 0x5A, 0x5B, 0x5C, 0x5D
+# The script will update the address in the sensor EEPROM and ask you to power-cycle
+# the sensor to confirm it. After all sensors are addressed, wire them together and
+# verify with sensors_i2C_combo.py.
+
 import smbus
 import time
 

@@ -48,31 +48,73 @@ Navigate to **Interface Options → Serial Port**:
 
 Finish and reboot. After rebooting, `/dev/serial0` (aliased to `/dev/ttyAMA0` or `/dev/ttyS0` depending on the Pi model) will be available for the HMI without a conflicting getty process.
 
-### 4. Add team6 to the gpio group
+### 4. Add team6 to the gpio and i2c groups
 
-The compressor speed is controlled via `RPi.GPIO`, which requires access to `/dev/gpiomem`. Raspberry Pi OS ships with a `gpio` group that has this access:
+Two groups are required:
+- **gpio** — needed by `RPi.GPIO` to access `/dev/gpiomem` for compressor PWM control
+- **i2c** — needed to access `/dev/i2c-1` for the MLX90614 temperature sensors and ADS1115 pressure ADC without running as root
 
 ```bash
-sudo usermod -aG gpio team6
+sudo usermod -aG gpio,i2c team6
 ```
 
 Log out and back in (or reboot) for the group membership to take effect.
 
-### 5. Clone this repo
+### 5. Enable PWM and configure I2C in `/boot/firmware/config.txt`
+
+```bash
+sudo nano /boot/firmware/config.txt
+```
+
+Add the following lines at the bottom:
+
+```
+# Enable hardware PWM0 on GPIO 12 (Raspberry Pi 4)
+dtoverlay=pwm,pin=12,func=4
+
+# Enable I2C and set bus speed
+# Circuit 1: use i2c_arm_baudrate=25000
+# Circuit 2: use i2c_arm_baudrate=50000
+dtparam=i2c_arm=on,i2c_arm_baudrate=50000
+```
+
+Save and exit, then reboot for the changes to take effect:
+
+```bash
+sudo reboot
+```
+
+### 6. Set I2C addresses on the temperature sensors
+
+Each MLX90614 IR sensor must be programmed to a unique I2C address before it is wired into the bus with other sensors. This is done one sensor at a time using `tests/mlxaddrset.py`.
+
+Target addresses per unit:
+- **Circuit 1:** `0x1A`, `0x3A`, `0x4A`, `0x5A`
+- **Circuit 2:** `0x5A`, `0x5B`, `0x5C`, `0x5D`
+
+Connect **one sensor at a time** to the Pi's I2C bus (the sensor ships at default address `0x5A`). Edit the `CURRENT_ADDR` and `NEW_ADDR` constants at the top of `tests/mlxaddrset.py`, then run:
+
+```bash
+python3 tests/mlxaddrset.py
+```
+
+The script will reprogram the sensor's EEPROM and prompt you to power-cycle it to confirm the new address. Repeat for each sensor. Once all sensors are addressed and wired together, run `tests/sensors_i2C_combo.py` to verify that all sensors are reachable on the bus and returning valid readings before starting the main application.
+
+### 8. Clone this repo
 
 ```bash
 git clone https://github.com/TGAGNON4/trane-python.git
 cd trane-python
 ```
 
-### 6. Create a virtual environment
+### 9. Create a virtual environment
 
 ```bash
-python3 -m venv ../venv
+python3 -m venv ../adsenv
 source ../adsenv/bin/activate
 ```
 
-### 7. Install dependencies
+### 10. Install dependencies
 
 Each subdirectory that requires packages has its own README listing what to install. Follow the relevant one for your Pi (e.g. `circuit1/README.md` or `circuit2/README.md`), then install with:
 
