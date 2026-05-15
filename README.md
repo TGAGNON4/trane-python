@@ -122,6 +122,47 @@ Each subdirectory that requires packages has its own README listing what to inst
 pip install <packages listed in that README>
 ```
 
+## Troubleshooting
+
+### SSH: "REMOTE HOST IDENTIFICATION HAS CHANGED!"
+
+If you see this error when connecting to a Pi via SSH:
+
+```
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+
+@    WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!     @
+
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+
+IT IS POSSIBLE THAT SOMEONE IS DOING SOMETHING NASTY!
+
+Someone could be eavesdropping on you right now (man-in-the-middle attack)!
+
+It is also possible that a host key has just been changed.
+```
+
+This typically occurs when:
+- The Pi has been reimaged or had its OS reinstalled
+- The Pi was replaced with a new one using the same hostname
+- The Pi got a new IP address and you're using a hostname that was previously associated with a different host
+
+**Solution:** Remove the old host key from your local `~/.ssh/known_hosts` file:
+
+```bash
+ssh-keygen -f ~/.ssh/known_hosts -R raspberrypi.local
+```
+
+Replace `raspberrypi.local` with the hostname or IP address you're connecting to. This removes the conflicting entry and allows SSH to generate a fresh host key on next connection.
+
+If you're using a different hostname (e.g. `circuit1.local` or an IP address), substitute that instead:
+
+```bash
+ssh-keygen -f ~/.ssh/known_hosts -R <your-hostname-or-ip>
+```
+
+After running the command, SSH will accept the new host key on your next connection attempt.
+
 ## Running manually
 
 On each Pi, run from the appropriate circuit directory:
